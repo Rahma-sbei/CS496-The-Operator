@@ -45,6 +45,7 @@ function describeCall(tool) {
     trash_email: "Move this email to Trash",
     label_email: "Add a label to this email",
     draft_reply: "Save a draft reply (it will not be sent)",
+    send_reply: "SEND a reply email (cannot be undone)",
   }[tool] || `Run ${tool}`;
 }
 
@@ -111,9 +112,10 @@ function renderGate(pending) {
   el.gateTarget.style.whiteSpace = "pre-wrap";
   // The exact call, produced by the backend from the model's real arguments.
   const args = { ...pending.args };
-  if (pending.tool === "draft_reply") delete args.body;
+  const isReply = pending.tool === "draft_reply" || pending.tool === "send_reply";
+  if (isReply) delete args.body;
   el.gateCall.textContent = `${pending.tool}(${JSON.stringify(args)})`;
-  if (pending.tool === "draft_reply") {
+  if (isReply) {
     el.gateTo.textContent = ctx.draft_to || "the original sender";
     el.gateDraft.textContent = pending.args.body;
     el.gateDraftWrap.hidden = false;
