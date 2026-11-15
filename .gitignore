@@ -16,3 +16,8 @@ __pycache__/
 # Runtime output
 back/logs/
 back/eval/results/
+
+# LaTeX build files
+report.aux
+report.log
+report.out
