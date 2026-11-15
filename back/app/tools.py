@@ -1,7 +1,7 @@
 """The agent's tools. Strict schemas, readable errors, writes flagged.
 
 Safety is decided HERE, in code:
-  * there is no send / forward / permanent-delete tool;
+  * there is no forward / permanent-delete tool, and send_reply only answers the original sender;
   * draft recipients come from the original email, not from the model;
   * labels come from a fixed allowlist;
   * every argument is validated before anything runs.
@@ -92,6 +92,13 @@ def _draft_reply(email_id: str, body: str) -> str:
     return f"Draft saved for {r['to']}. It has NOT been sent."
 
 
+def _send_reply(email_id: str, body: str) -> str:
+    r = gmail_client.send_reply(email_id, body)
+    if not r["sent"]:
+        return f"Already done: an identical reply to {r['to']} was already sent. Nothing was sent."
+    return f"Reply sent to {r['to']}."
+
+
 # ---------- registry ----------
 
 @dataclass(frozen=True)
@@ -124,6 +131,10 @@ TOOL_SPECS = [
              "WRITE. Save a draft reply to an email. The recipient is fixed to the original sender. "
              "The draft is NOT sent. Needs human approval.",
              DraftReplyArgs, _draft_reply, True),
+    ToolSpec("send_reply",
+             "WRITE. SEND a reply email to the original sender. The recipient is fixed and cannot be chosen. "
+             "Use only when the user clearly asks to send. Needs human approval.",
+             DraftReplyArgs, _send_reply, True),
 ]
 
 TOOLS_BY_NAME = {s.name: s for s in TOOL_SPECS}
@@ -177,7 +188,7 @@ def describe_target(name: str, args: dict) -> dict:
     try:
         s = gmail_client.get_summary(email_id)
         ctx["email_from"], ctx["email_subject"] = s["from"], s["subject"]
-        if name == "draft_reply":
+        if name in ("draft_reply", "send_reply"):
             ctx["draft_to"] = gmail_client.reply_address(email_id)
     except Exception:  # noqa: BLE001 - the card still shows the exact call
         ctx["note"] = "Could not load the email details."

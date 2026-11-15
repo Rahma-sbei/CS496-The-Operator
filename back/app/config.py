@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(BASE_DIR / ".env")  # must run before langchain reads LANGSMITH_* / OPENAI_*
 
-# Narrowest scope that can read, label, archive, trash and create drafts.
-# It cannot permanently delete. (It *can* send, which is why no send tool exists in code.)
+# Narrowest scope that can read, label, archive, trash, create drafts and send.
+# It cannot permanently delete. (It can send, so send_reply is guarded in code: fixed recipient + human approval.)
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 

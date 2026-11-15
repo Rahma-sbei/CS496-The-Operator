@@ -177,22 +177,18 @@ def _find_draft(thread_id: str, key: str) -> str | None:
     return None
 
 
-def create_draft_reply(email_id: str, body: str) -> dict:
+def _build_reply(email_id: str, body: str):
+    """Build the reply message. The recipient comes from the ORIGINAL email, never from the model."""
     m = _meta(email_id, ["From", "Reply-To", "Subject", "Message-ID", "References"])
     h = _headers(m["payload"])
     to = parseaddr(h.get("reply-to") or h.get("from", ""))[1]
     if not to:
-        raise ToolError("The original email has no sender address, so a reply cannot be drafted.")
+        raise ToolError("The original email has no sender address, so a reply cannot be created.")
     subject = h.get("subject", "")
     if not subject.lower().startswith("re:"):
         subject = "Re: " + subject
-    thread_id = m["threadId"]
 
     key = hashlib.sha256(f"{email_id}\n{body}".encode()).hexdigest()[:16]
-    existing = _find_draft(thread_id, key)
-    if existing:
-        return {"draft_id": existing, "to": to, "created": False}
-
     msg = EmailMessage()
     msg["To"] = to
     msg["Subject"] = subject
@@ -202,7 +198,32 @@ def create_draft_reply(email_id: str, body: str) -> dict:
     msg["X-Operator-Key"] = key
     msg.set_content(body)
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-    d = service().users().drafts().create(
-        userId="me", body={"message": {"raw": raw, "threadId": thread_id}}
-    ).execute()
+    return {"raw": raw, "threadId": m["threadId"]}, to, key
+
+
+def create_draft_reply(email_id: str, body: str) -> dict:
+    message, to, key = _build_reply(email_id, body)
+    existing = _find_draft(message["threadId"], key)
+    if existing:
+        return {"draft_id": existing, "to": to, "created": False}
+    d = service().users().drafts().create(userId="me", body={"message": message}).execute()
     return {"draft_id": d["id"], "to": to, "created": True}
+
+
+def _find_sent(thread_id: str, key: str) -> bool:
+    """Idempotency: a SENT message in this thread already carries the same X-Operator-Key."""
+    thread = service().users().threads().get(
+        userId="me", id=thread_id, format="metadata", metadataHeaders=["X-Operator-Key"]
+    ).execute()
+    return any(
+        "SENT" in msg.get("labelIds", []) and _headers(msg["payload"]).get("x-operator-key") == key
+        for msg in thread.get("messages", [])
+    )
+
+
+def send_reply(email_id: str, body: str) -> dict:
+    message, to, key = _build_reply(email_id, body)
+    if _find_sent(message["threadId"], key):
+        return {"to": to, "sent": False}
+    service().users().messages().send(userId="me", body=message).execute()
+    return {"to": to, "sent": True}

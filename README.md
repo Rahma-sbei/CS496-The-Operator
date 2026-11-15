@@ -13,6 +13,8 @@ Chrome side panel (front/)  <--HTTP-->  FastAPI + LangGraph agent (back/)  --> G
 The eval and `sandbox/seed.py` **trash everything** in the connected account. Never connect a personal inbox.
 
 ## Setup (back)
+Shortcut on Linux/macOS: `make setup` does step 1, then `make run` starts the server (`make test` and `make eval` also exist). Steps 2 to 4 (Google and `.env`) are still manual.
+
 1. **Python 3.10+**
    ```bash
    cd back
@@ -42,7 +44,7 @@ No build step.
 ```bash
 cd back
 pytest -q                          # offline: stop rule, approval, idempotency, caps, injection hygiene
-python -m eval.run_eval            # 33 scenarios against the real test Gmail; prints the summary
+python -m eval.run_eval            # 34 scenarios against the real test Gmail; prints the summary
 python -m eval.run_eval --only inject-I1 fault-read --repeat 3
 ```
 The eval resets and seeds only the emails each scenario needs, answers approval prompts with a scripted
@@ -50,12 +52,12 @@ The eval resets and seeds only the emails each scenario needs, answers approval 
 Results: `back/eval/results/latest.json`; traces: LangSmith project `gmail-operator`.
 
 ## Safety design (in code, not in the prompt)
-- Tools: `list_emails`, `read_email`, `archive_email`, `trash_email`, `label_email`, `draft_reply`.
-  **No send, forward or permanent delete exists.** Draft recipient = original sender (the model cannot choose).
+- Tools: `list_emails`, `read_email`, `archive_email`, `trash_email`, `label_email`, `draft_reply`, `send_reply`.
+  **No forward or permanent delete exists.** The recipient of a draft or a send is always the original sender (the model cannot choose).
 - Stop rule: `MAX_STEPS`, `MAX_TOKENS`, `MAX_WRITES`, checked in the graph before each model call; LangGraph's `recursion_limit` is a backup.
 - Human checkpoint: `interrupt()` before every write; the card shows the exact call.
-- Idempotency: identical write in one run is skipped; drafts carry an `X-Operator-Key` header checked in Gmail.
-- Untrusted text: email content wrapped in `<untrusted_email>`, forged tags stripped. See `back/threat_model.md`.
+- Idempotency: identical write in one run is skipped; drafts and sent replies carry an `X-Operator-Key` header that is checked in Gmail, so a repeat does not create or send a second copy.
+- Untrusted text: email content wrapped in `<untrusted_email>`, forged tags stripped. See `threat_model.md`.
 
 ## Layout
 ```
@@ -63,7 +65,8 @@ back/app/        gmail_client.py  tools.py  agent.py  runner.py  main.py  safety
 back/sandbox/    auth.py  seed.py  reset.py  seed_emails.py
 back/eval/       scenarios.py  run_eval.py
 back/tests/      test_harness.py
-back/            errors.md  threat_model.md  postmortem.md  requirements.txt  .env.example
+back/            requirements.txt  .env.example
+(repo root)      errors.md  threat_model.md  postmortem.md
 front/           manifest.json  sidepanel.{html,css,js}  background.js  content.js
 ```
 (The slides ask for `agent/`, `sandbox/`, `eval/` at repo top level. Move or rename folders if your instructor wants that exact layout.)
