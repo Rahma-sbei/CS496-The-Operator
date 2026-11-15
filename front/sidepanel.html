@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gmail Operator</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>Gmail Operator</h1>
+      <p id="account" class="account" data-state="unknown">Checking backend…</p>
+    </div>
+    <button id="settings-toggle" class="ghost" aria-expanded="false" aria-controls="settings">Settings</button>
+  </header>
+
+  <section id="settings" class="settings" hidden>
+    <label>Backend address
+      <input id="base-url" type="url" spellcheck="false" placeholder="http://localhost:8000">
+    </label>
+    <label>API token (API_TOKEN from back/.env)
+      <input id="token" type="password" autocomplete="off" spellcheck="false">
+    </label>
+    <button id="save-settings" class="primary">Save and reconnect</button>
+  </section>
+
+  <main class="scroll" id="scroll">
+    <form id="compose" class="compose">
+      <label for="request">What should I do with the inbox?</label>
+      <textarea id="request" rows="3" maxlength="1000"
+        placeholder="Archive the newsletters and draft replies to anyone who asked me a question."></textarea>
+      <div class="compose-row">
+        <span id="status" class="status" role="status" aria-live="polite">Ready</span>
+        <button id="run" type="submit" class="primary">Run</button>
+      </div>
+    </form>
+
+    <p id="notice" class="notice" hidden role="alert"></p>
+
+    <ol id="timeline" class="timeline" aria-label="What the agent has done"></ol>
+
+    <section id="final" class="final" hidden>
+      <h2>Summary</h2>
+      <p id="final-text"></p>
+      <p id="final-meta" class="meta"></p>
+    </section>
+  </main>
+
+  <!-- The approval gate stays pinned at the bottom: nothing is written until you answer. -->
+  <section id="gate" class="gate" hidden aria-labelledby="gate-title">
+    <h2 id="gate-title" tabindex="-1"></h2>
+    <p id="gate-target" class="gate-target"></p>
+    <pre id="gate-call" class="call"></pre>
+    <div id="gate-draft-wrap" hidden>
+      <p class="gate-label">Draft to <span id="gate-to"></span></p>
+      <pre id="gate-draft" class="draft"></pre>
+    </div>
+    <div class="gate-actions">
+      <button id="deny" class="deny">Deny</button>
+      <button id="approve" class="approve">Approve</button>
+    </div>
+  </section>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

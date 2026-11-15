@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Gmail Operator",
+  "version": "0.1.0",
+  "description": "An AI agent that triages your Gmail inbox. Every change waits for your approval.",
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+    "https://mail.google.com/*"
+  ],
+  "side_panel": { "default_path": "sidepanel.html" },
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Open Gmail Operator" },
+  "content_scripts": [
+    { "matches": ["https://mail.google.com/*"], "js": ["content.js"] }
+  ]
+}

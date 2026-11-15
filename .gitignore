@@ -1,0 +1,15 @@
+# Secrets: NEVER commit these
+.env
+credentials.json
+token.json
+*.pem
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Runtime output
+back/logs/
+back/eval/results/
