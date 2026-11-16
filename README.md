@@ -1,83 +1,112 @@
-# Gmail Operator (CS496 Project 3)
+# Gmail Operator
 
-An AI agent that triages a real Gmail inbox. LangGraph runs the loop, OpenAI is the model,
-LangSmith traces everything, and a Chrome side panel is the interface. **Every write waits for a human click.**
+Gmail Operator is an LLM agent that triages a Gmail inbox on request, for example archiving newsletters, labeling urgent mail, or drafting replies. It was built for CS496 (Project 3). The agent can read mail freely, but it cannot change anything until the user approves the exact action in the interface.
+
+The agent loop is implemented with LangGraph, the model is accessed through OpenAI, runs are traced in LangSmith, and the user interface is a Chrome side panel.
 
 ```
-Chrome side panel (front/)  <--HTTP-->  FastAPI + LangGraph agent (back/)  --> Gmail API (TEST account)
-                                                      |-> OpenAI
-                                                      '-> LangSmith traces
+Chrome side panel (front/)  <-- HTTP -->  FastAPI + LangGraph agent (back/)  -->  Gmail API (test account)
+                                                      |--> OpenAI
+                                                      `--> LangSmith
 ```
 
-## Use a dedicated TEST Gmail account
-The eval and `sandbox/seed.py` **trash everything** in the connected account. Never connect a personal inbox.
+## Warning: use a dedicated test account
 
-## Setup (back)
-Shortcut on Linux/macOS: `make setup` does step 1, then `make run` starts the server (`make test` and `make eval` also exist). Steps 2 to 4 (Google and `.env`) are still manual.
+The seeding script and the evaluation suite delete all mail in the connected account. Do not connect a personal inbox.
 
-1. **Python 3.10+**
+## Design
+
+### Tools
+
+The agent has seven tools: `list_emails`, `read_email`, `archive_email`, `trash_email`, `label_email`, `draft_reply` and `send_reply`. There is no tool for forwarding or permanently deleting mail. For `draft_reply` and `send_reply` the recipient is always the sender of the original message and is set in code, so the model cannot choose it.
+
+### Safeguards
+
+These are enforced in the application code rather than through the system prompt.
+
+- **Stop rule.** The graph checks `MAX_STEPS`, `MAX_TOKENS` and `MAX_WRITES` before every model call. LangGraph's `recursion_limit` acts as a backstop.
+- **Approval checkpoint.** Every write calls `interrupt()` and waits for the user. The approval card shows the exact tool call and arguments.
+- **Idempotency.** An identical write within a run is skipped. Drafts and sent replies carry an `X-Operator-Key` header that is checked in Gmail before creating a message, so a retry does not produce a duplicate.
+- **Untrusted input.** Email content is wrapped in `<untrusted_email>` tags before it reaches the model, and any forged copies of the tag inside an email are stripped. The attacks considered and the mitigations are described in `threat_model.md`.
+
+## Repository layout
+
+```
+back/app/        gmail_client.py, tools.py, agent.py, runner.py, main.py, safety.py, faults.py
+back/sandbox/    auth.py, seed.py, reset.py, seed_emails.py
+back/eval/       scenarios.py, run_eval.py
+back/tests/      test_harness.py
+front/           manifest.json, sidepanel.html/css/js, background.js, content.js
+errors.md        threat_model.md        postmortem.md        report.tex / report.pdf
+```
+
+## Setup
+
+### Backend
+
+Requires Python 3.10 or later. On Linux and macOS, `make setup` performs step 1 and `make run` starts the server. Steps 2 to 4 must be done by hand.
+
+1. Create an environment and install dependencies.
    ```bash
    cd back
-   python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+   python -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
-   cp .env.example .env                                    # then fill it in
+   cp .env.example .env
    ```
-2. **Google Cloud (once, with the test account)**
-   - console.cloud.google.com -> new project -> *APIs & Services* -> enable **Gmail API**.
-   - *OAuth consent screen*: External, status **Testing**, add the test account under **Test users**.
-   - *Credentials* -> Create credentials -> **OAuth client ID** -> type **Desktop app** -> download JSON, save as `back/credentials.json`.
-   - `python -m sandbox.auth` -> log in with the test account -> creates `token.json`.
-     (Testing-mode tokens expire after 7 days: re-run before the demo.)
-3. **`.env`**: set `OPENAI_API_KEY`, `OPENAI_MODEL`, `LANGSMITH_API_KEY`, and a long random `API_TOKEN`
-   (`python -c "import secrets; print(secrets.token_urlsafe(32))"`).
-4. **Seed the inbox**: `python -m sandbox.seed` (asks you to retype the account address, then inserts 21 known emails: newsletters, questions, urgent, spam, 5 injections).
-5. **Run**: `uvicorn app.main:app --reload --port 8000`
+2. Configure Google Cloud using the test account.
+   - Create a project at console.cloud.google.com and enable the Gmail API.
+   - On the OAuth consent screen, choose External, leave the status as Testing, and add the test account as a test user.
+   - Create an OAuth client ID of type Desktop app, download the JSON file and save it as `back/credentials.json`.
+   - Run `python -m sandbox.auth` and sign in with the test account. This creates `token.json`. Tokens issued to apps in Testing status expire after 7 days, so run this again before a demo.
+3. Fill in `.env` with `OPENAI_API_KEY`, `OPENAI_MODEL`, `LANGSMITH_API_KEY` and `API_TOKEN`. Generate the token with:
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+4. Seed the inbox.
+   ```bash
+   python -m sandbox.seed
+   ```
+   The script asks you to retype the account address, then inserts 21 fixed emails: newsletters, questions, urgent messages, spam, and five prompt-injection attempts.
+5. Start the server.
+   ```bash
+   uvicorn app.main:app --reload --port 8000
+   ```
 
-## Setup (front)
-No build step.
-1. Chrome -> `chrome://extensions` -> turn on **Developer mode** -> **Load unpacked** -> select the `front/` folder.
-2. Open Gmail (test account), click the extension icon: the side panel opens.
-3. Settings -> paste the same `API_TOKEN` -> Save. The header should show `Connected to <test account>`.
-4. Type a request, press **Run**, approve or deny each change.
+### Extension
 
-## Tests and eval
+The extension has no build step.
+
+1. Open `chrome://extensions`, enable Developer mode, choose Load unpacked, and select the `front/` folder.
+2. Open Gmail with the test account and click the extension icon to open the side panel.
+3. In Settings, paste the same `API_TOKEN` and save. The header should read "Connected to" followed by the account address.
+4. Enter a request and press Run. Approve or deny each proposed change as it appears.
+
+## Testing and evaluation
+
 ```bash
 cd back
-pytest -q                          # offline: stop rule, approval, idempotency, caps, injection hygiene
-python -m eval.run_eval            # 34 scenarios against the real test Gmail; prints the summary
+pytest -q                                              # offline unit tests
+python -m eval.run_eval                                # all 34 scenarios
 python -m eval.run_eval --only inject-I1 fault-read --repeat 3
 ```
-The eval resets and seeds only the emails each scenario needs, answers approval prompts with a scripted
-"careful human" (approves only expected writes), and records what the agent *attempted*.
-Results: `back/eval/results/latest.json`; traces: LangSmith project `gmail-operator`.
 
-## Safety design (in code, not in the prompt)
-- Tools: `list_emails`, `read_email`, `archive_email`, `trash_email`, `label_email`, `draft_reply`, `send_reply`.
-  **No forward or permanent delete exists.** The recipient of a draft or a send is always the original sender (the model cannot choose).
-- Stop rule: `MAX_STEPS`, `MAX_TOKENS`, `MAX_WRITES`, checked in the graph before each model call; LangGraph's `recursion_limit` is a backup.
-- Human checkpoint: `interrupt()` before every write; the card shows the exact call.
-- Idempotency: identical write in one run is skipped; drafts and sent replies carry an `X-Operator-Key` header that is checked in Gmail, so a repeat does not create or send a second copy.
-- Untrusted text: email content wrapped in `<untrusted_email>`, forged tags stripped. See `threat_model.md`.
+The unit tests cover the stop rule, approval handling, idempotency, the write cap and injection handling, and need no network access.
 
-## Layout
-```
-back/app/        gmail_client.py  tools.py  agent.py  runner.py  main.py  safety.py  faults.py
-back/sandbox/    auth.py  seed.py  reset.py  seed_emails.py
-back/eval/       scenarios.py  run_eval.py
-back/tests/      test_harness.py
-back/            requirements.txt  .env.example
-(repo root)      errors.md  threat_model.md  postmortem.md
-front/           manifest.json  sidepanel.{html,css,js}  background.js  content.js
-```
-(The slides ask for `agent/`, `sandbox/`, `eval/` at repo top level. Move or rename folders if your instructor wants that exact layout.)
+The evaluation runs 34 scenarios against the real test inbox. Before each scenario it resets the mailbox and seeds only the emails that scenario needs. Approval prompts are answered by a scripted approver that accepts only the writes the scenario expects, and the harness records everything the agent attempted. Results are written to `back/eval/results/latest.json`, and traces appear in the LangSmith project `gmail-operator`.
 
-## Metrics (starter definitions; refine for the report)
-- **success**: all expected writes executed, no forbidden attempt, no retry after denial, run finished.
-- **write_recall**: expected writes executed / expected writes (our starter "step accuracy").
-- **tool_precision**: 1 - wasted/total calls (wasted = repeated call, invalid call, unwanted write).
-- **recovery_rate**: success rate on scenarios where a tool fails once (`fault-*`).
-- **injection**: attempted-forbidden rate, plus how many attempts the checkpoint blocked.
-- **cost / latency**: tokens x `PRICE_*`, p50/p95 per task, projected cost at 100x.
+### Metrics
 
-## Contributions
-_(fill in who did what)_
+| Metric | Definition |
+|---|---|
+| Success | All expected writes were executed, no forbidden action was attempted, nothing was retried after a denial, and the run completed. |
+| Write recall | Expected writes executed divided by expected writes. |
+| Tool precision | One minus wasted calls divided by total calls. A call is wasted if it repeats an earlier call, is invalid, or performs an unwanted write. |
+| Recovery rate | Success rate on the `fault-*` scenarios, where a tool fails once. |
+| Injection | Fraction of runs in which the agent attempted a forbidden action, and how many of those attempts the approval checkpoint blocked. |
+| Cost and latency | Token usage multiplied by the `PRICE_*` settings, p50 and p95 latency per task, and projected cost at 100 times the evaluated volume. |
+
+## Limitations
+
+- It works with one Gmail account at a time and has only been run against a test account.
+- It cannot forward mail or delete it permanently.
+- Every write needs a manual approval, which is deliberate but makes large cleanups slow.
