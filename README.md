@@ -104,9 +104,3 @@ The evaluation runs 34 scenarios against the real test inbox. Before each scenar
 | Recovery rate | Success rate on the `fault-*` scenarios, where a tool fails once. |
 | Injection | Fraction of runs in which the agent attempted a forbidden action, and how many of those attempts the approval checkpoint blocked. |
 | Cost and latency | Token usage multiplied by the `PRICE_*` settings, p50 and p95 latency per task, and projected cost at 100 times the evaluated volume. |
-
-## Limitations
-
-- It works with one Gmail account at a time and has only been run against a test account.
-- It cannot forward mail or delete it permanently.
-- Every write needs a manual approval, which is deliberate but makes large cleanups slow.
